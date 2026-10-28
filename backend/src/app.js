@@ -1,27 +1,50 @@
-// Seed do servidor backend do Document Management System.
-//
-// Este arquivo é apenas um ponto de partida mínimo. Ao longo do workshop você
-// vai usar o Agent Mode do GitHub Copilot para construir as camadas:
-//   - routes/       (definição das rotas)
-//   - controllers/  (entrada HTTP e validação)
-//   - services/     (regras de negócio)
-//   - repositories/ (persistência: arquivos locais + metadados em memória)
-//
-// Restrição do projeto: uploads são gravados no filesystem local da aplicação
-// usando multer com diskStorage. Não utilize provedores externos.
-
+const path = require('node:path');
 const express = require('express');
+const multer = require('multer');
+const createDocumentsRepository = require('./repositories/documentsRepository');
+const createDocumentsService = require('./services/documentsService');
+const createDocumentsController = require('./controllers/documentsController');
+const createDocumentsRouter = require('./routes/documentsRoutes');
 
-const app = express();
 const PORT = process.env.PORT || 3000;
 
-app.use(express.json());
+function buildApp({ storageDirectory } = {}) {
+  const resolvedStorageDirectory = path.resolve(
+    storageDirectory || process.env.DOCUMENT_STORAGE_PATH || path.join(__dirname, '..', 'storage')
+  );
+  const documentsRepository = createDocumentsRepository({
+    storageDirectory: resolvedStorageDirectory,
+  });
+  const documentsService = createDocumentsService({ documentsRepository });
+  const documentsController = createDocumentsController({ documentsService });
+  const documentsRouter = createDocumentsRouter({
+    documentsController,
+    storageDirectory: resolvedStorageDirectory,
+  });
+  const app = express();
 
-// Endpoint de verificação de saúde. As demais rotas (/upload, /documents,
-// /documents/:id/download) serão implementadas durante o Passo 2.
-app.get('/health', (req, res) => {
-  res.json({ status: 'ok' });
-});
+  app.use(express.json());
+  app.get('/health', (req, res) => {
+    res.json({ status: 'ok' });
+  });
+  app.use(documentsRouter);
+  app.use((error, req, res, next) => {
+    if (res.headersSent) {
+      return next(error);
+    }
+
+    if (error instanceof multer.MulterError) {
+      return res.status(400).json({ error: 'Não foi possível processar o arquivo enviado.' });
+    }
+
+    return res.status(500).json({ error: 'Erro interno do servidor.' });
+  });
+
+  return app;
+}
+
+const app = buildApp();
+app.buildApp = buildApp;
 
 if (require.main === module) {
   app.listen(PORT, () => {
