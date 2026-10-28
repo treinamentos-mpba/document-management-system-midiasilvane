@@ -6,7 +6,11 @@ function createDocumentsController({ documentsService }) {
           return res.status(400).json({ error: 'Envie um arquivo no campo "file".' });
         }
 
-        const document = await documentsService.uploadDocument(req.file);
+        const document = await documentsService.uploadDocument({
+          originalName: req.file.originalname,
+          size: req.file.size,
+          storageKey: req.file.filename,
+        });
         return res.status(201).json(document);
       } catch (error) {
         return next(error);
